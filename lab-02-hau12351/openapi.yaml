@@ -1,0 +1,319 @@
+openapi: 3.1.0
+
+info:
+  title: Smart Campus - Camera Stream to AI Vision API
+  version: 1.0.0
+  description: Contract for Pair 01 Camera Stream and AI Vision
+  contact:
+    name: Hau Doan
+    email: dhau20055@gmail.com
+
+servers:
+  - url: http://localhost:4010
+    description: Prism Mock Server
+
+tags:
+  - name: system
+    description: Health and system operations
+
+  - name: vision
+    description: AI Vision operations
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /health:
+    get:
+      tags:
+        - system
+      operationId: getHealth
+      summary: Health check
+      description: Returns service status and version information.
+      security: []
+
+      responses:
+        "200":
+          description: Service is healthy
+
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /vision/detect:
+   post:
+      tags:
+        - vision
+      operationId: detectImage
+      summary: Analyze image
+      description: Receives image metadata and returns AI detection results.
+
+      requestBody:
+        required: true
+
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetectionRequest"
+
+      responses:
+
+        "200":
+          description: Detection successful
+
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetectionResponse"
+
+        "400":
+          description: Bad request
+
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+        "401":
+          description: Unauthorized
+
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+        "500":
+          description: Internal server error
+
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /vision/detections/{detectionId}:
+    get:
+      tags:
+        - vision
+      operationId: getDetection
+      summary: Get detection result
+      description: Retrieves a previously generated detection result by identifier.
+
+      parameters:
+        - name: detectionId
+          in: path
+          required: true
+
+          schema:
+            type: string
+
+      responses:
+
+        "200":
+          description: Detection detail
+
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetectionResponse"
+
+        "404":
+          description: Detection not found
+
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /vision/models/info:
+    get:
+      tags:
+        - vision
+      operationId: getModelInfo
+      summary: Get model information
+      description: Returns information about the AI model currently in use.
+
+      responses:
+
+        "200":
+          description: Model information
+
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelInfo"
+
+components:
+
+  securitySchemes:
+
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    DetectionRequest:
+      type: object
+
+      required:
+        - camera_id
+        - timestamp
+
+      properties:
+
+        camera_id:
+          type: string
+          example: cam-gate-a
+
+        image_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          example: https://example.com/frame.jpg
+
+        correlation_id:
+          type:
+            - string
+            - "null"
+
+        timestamp:
+          type: string
+          format: date-time
+
+    DetectionResponse:
+      type: object
+
+      required:
+        - detectionId
+        - result
+        - riskLevel
+
+      properties:
+
+        detectionId:
+          type: string
+          example: DET-001
+
+        riskLevel:
+          type: string
+
+          enum:
+            - low
+            - medium
+            - high
+
+        result:
+          $ref: "#/components/schemas/DetectionResult"
+
+    DetectionResult:
+
+      oneOf:
+        - $ref: "#/components/schemas/PersonDetection"
+        - $ref: "#/components/schemas/VehicleDetection"
+
+      discriminator:
+        propertyName: objectType
+
+    PersonDetection:
+      type: object
+
+      properties:
+
+        objectType:
+          type: string
+          enum:
+            - person
+
+        confidence:
+          type: number
+
+        facesCount:
+          type: integer
+
+    VehicleDetection:
+      type: object
+
+      properties:
+
+        objectType:
+          type: string
+          enum:
+            - vehicle
+
+        confidence:
+          type: number
+
+        plateDetected:
+          type: boolean
+
+    ModelInfo:
+      type: object
+
+      properties:
+
+        modelName:
+          type: string
+          example: YOLOv8
+
+        version:
+          type: string
+          example: 8.3.0
+
+        provider:
+          type: string
+          example: OpenCV
+
+    HealthResponse:
+      type: object
+
+      required:
+        - status
+        - service
+        - version
+
+      properties:
+
+        status:
+          type: string
+          example: ok
+
+        service:
+          type: string
+          example: ai-vision
+
+        version:
+          type: string
+          example: 1.0.0
+
+    Problem:
+      type: object
+
+      required:
+        - type
+        - title
+        - status
+        - detail
+
+      properties:
+
+        type:
+          type: string
+          format: uri
+
+        title:
+          type: string
+
+        status:
+          type: integer
+
+        detail:
+          type: string
+
+        instance:
+          type:
+            - string
+            - "null"
