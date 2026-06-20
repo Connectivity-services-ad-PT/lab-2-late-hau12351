@@ -1,38 +1,216 @@
-# User Story — Camera Stream → AI Vision
+# User Story — Pair 01 Camera Stream → AI Vision
 
-## 1. Cơ chế
+## 1. Mechanism
 
-**REST sync**
+REST synchronous communication.
 
-## 2. Bối cảnh
+Camera Stream gọi trực tiếp AI Vision thông qua HTTP REST API khi phát hiện chuyển động từ camera.
 
-Camera Stream gửi frame hoặc image metadata khi phát hiện motion để AI Vision chạy detect.
+---
 
-## 3. Nhu cầu của Consumer
+## 2. Context
 
-Consumer cần response nhanh gồm detectionId, objects, confidence và riskLevel để chuyển tiếp cho Core Business khi có bất thường.
+Trong hệ thống Smart Campus, Camera Stream chịu trách nhiệm thu nhận luồng video từ camera giám sát.
 
-## 4. Endpoint / Event trọng tâm
+Khi phát hiện chuyển động (motion detection), Camera Stream tạo snapshot và gửi metadata của ảnh sang AI Vision để thực hiện nhận diện đối tượng.
 
-- `POST /vision/detect`
-- `GET /vision/detections/{detectionId}`
-- `GET /vision/models/info`
-- `GET /health`
+AI Vision phân tích ảnh và trả về kết quả nhận diện như người, phương tiện hoặc đối tượng chưa xác định cùng mức độ rủi ro.
 
-## 5. Error case / Issue cần nghĩ trước
+---
 
-- Dữ liệu sai định dạng.
-- Thiếu thông tin định danh hoặc correlation id.
-- Consumer và Provider hiểu khác nhau về trạng thái nghiệp vụ.
-- Trùng event/request hoặc retry gây xử lý lặp.
-- Timeout hoặc lỗi downstream.
+## 3. Consumer Need
 
-## 6. Câu hỏi gợi ý cho phiên đàm phán
+Consumer là Camera Stream.
 
-1. Ảnh gửi dạng multipart hay URL?
-2. Giới hạn kích thước frame là bao nhiêu?
-3. AI Vision trả kết quả đồng bộ hay trả detectionId để polling?
+Camera Stream cần:
 
-## 7. Ghi chú phạm vi Lab 02
+* Gửi thông tin ảnh vừa chụp.
+* Nhận kết quả nhận diện trong thời gian ngắn.
+* Lấy detectionId để truy vấn lại khi cần.
+* Nhận confidence và riskLevel để chuyển tiếp sang Core Business Service.
+* Có khả năng kiểm tra trạng thái AI Vision trước khi gửi yêu cầu.
 
-Cặp này là REST sync. Hai bên cần viết hoặc chỉnh `openapi.yaml`, chạy Spectral lint và chạy Prism mock server để tạo bằng chứng.
+---
+
+## 4. Provider Responsibility
+
+Provider là AI Vision.
+
+AI Vision cần:
+
+* Nhận request phân tích ảnh.
+* Kiểm tra dữ liệu đầu vào.
+* Thực hiện nhận diện đối tượng.
+* Trả kết quả chuẩn hóa.
+* Cung cấp endpoint kiểm tra sức khỏe hệ thống.
+* Cung cấp endpoint tra cứu kết quả nhận diện.
+* Cung cấp endpoint thông tin model đang sử dụng.
+
+---
+
+## 5. Main Endpoints
+
+### POST /vision/detect
+
+Camera Stream gửi metadata ảnh để AI Vision xử lý.
+
+Request:
+
+```json
+{
+  "camera_id": "cam-gate-a",
+  "image_url": "http://camera-stream/static/frame001.jpg",
+  "timestamp": "2026-05-02T09:10:00Z",
+  "correlation_id": "CORR-001"
+}
+```
+
+Response:
+
+```json
+{
+  "detectionId": "DET-001",
+  "riskLevel": "medium",
+  "result": {
+    "objectType": "person",
+    "confidence": 0.91
+  }
+}
+```
+
+---
+
+### GET /vision/detections/{detectionId}
+
+Truy vấn kết quả nhận diện.
+
+---
+
+### GET /vision/models/info
+
+Lấy thông tin model AI hiện tại.
+
+---
+
+### GET /health
+
+Kiểm tra trạng thái hoạt động của AI Vision.
+
+---
+
+## 6. Business Rules
+
+1. Mỗi request phải có camera_id.
+2. Mỗi request phải có timestamp hợp lệ.
+3. image_url phải là URL truy cập được.
+4. detectionId phải duy nhất.
+5. AI Vision phải trả confidence trong khoảng từ 0 đến 1.
+6. riskLevel chỉ nhận một trong ba giá trị:
+
+   * low
+   * medium
+   * high
+
+---
+
+## 7. Error Cases
+
+### Invalid Request
+
+* Thiếu camera_id.
+* Thiếu timestamp.
+* image_url không hợp lệ.
+
+HTTP Status:
+
+```text
+400 Bad Request
+```
+
+### Unauthorized
+
+* Thiếu Bearer Token.
+* Token không hợp lệ.
+
+HTTP Status:
+
+```text
+401 Unauthorized
+```
+
+### Not Found
+
+* detectionId không tồn tại.
+
+HTTP Status:
+
+```text
+404 Not Found
+```
+
+### Internal Error
+
+* AI model lỗi.
+* Downstream service lỗi.
+
+HTTP Status:
+
+```text
+500 Internal Server Error
+```
+
+---
+
+## 8. Negotiation Issues
+
+### Issue 1
+
+Ảnh được gửi dưới dạng URL hay upload file trực tiếp?
+
+Quyết định:
+
+Sử dụng image_url.
+
+Lý do:
+
+Giảm kích thước request và đơn giản hóa tích hợp.
+
+---
+
+### Issue 2
+
+Kết quả trả đồng bộ hay bất đồng bộ?
+
+Quyết định:
+
+Trả đồng bộ.
+
+Lý do:
+
+Camera Stream cần phản hồi nhanh để chuyển tiếp cho Core Business.
+
+---
+
+### Issue 3
+
+Có cần correlation_id không?
+
+Quyết định:
+
+Có.
+
+Lý do:
+
+Hỗ trợ tracing và debugging giữa các service.
+
+---
+
+## 9. Acceptance Criteria
+
+* Camera Stream gọi thành công POST /vision/detect.
+* AI Vision trả detectionId hợp lệ.
+* GET /vision/detections/{id} hoạt động.
+* GET /vision/models/info hoạt động.
+* GET /health hoạt động.
+* Contract pass Spectral lint.
+* Prism mock server chạy thành công.
